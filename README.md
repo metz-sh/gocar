@@ -73,11 +73,3 @@ $ cargo run pullversion --package_name example-package
 
 - `clap`: A command-line argument parser for Rust.
 - `dialoguer`: A Rust library for user-friendly command-line interfaces.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
---- 
-
-Feel free to adjust any parts of this README to better fit your project specifics!

@@ -1,55 +1,80 @@
-use std::{cmp::Ordering, env, fs, io, path::Path};
+use std::{cmp::Ordering, env, fs, path::Path};
 
-type SortedDirEntries = Vec<io::Result<fs::DirEntry>>;
+use thiserror::Error;
 
-pub fn get_current_directory_name() -> String {
-    String::from(
-        env::current_dir()
-            .unwrap()
+type Files = Vec<File>;
+
+pub struct File(fs::DirEntry);
+
+impl File {
+    fn compare_file_modified(&self, other: &Self) -> Result<Ordering, FSError> {
+        Ok(self
+            .0
+            .metadata()?
+            .modified()?
+            .cmp(&other.0.metadata()?.modified()?))
+    }
+
+    pub fn get_file_name(&self) -> Result<String, FSError> {
+        self.0
             .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap(),
-    )
-}
-
-pub fn parse_package_to_directory(name: &String) -> Result<&Path, String> {
-    let path = Path::new(name);
-    match path.is_dir() {
-        true => Ok(&path),
-        false => Err(String::from("No such package found!")),
+            .into_string()
+            .map_err(|_| FSError::FailedToFetchFileName)
     }
 }
 
-fn compare_file_metadata(
-    a: &io::Result<fs::DirEntry>,
-    b: &io::Result<fs::DirEntry>,
-) -> io::Result<Ordering> {
-    Ok(b.as_ref()
-        .unwrap()
-        .metadata()?
-        .modified()?
-        .cmp(&a.as_ref().unwrap().metadata()?.modified()?))
+#[derive(Error, Debug)]
+pub enum FSError {
+    #[error("No such package found")]
+    NoPackageFound,
+
+    #[error("IO error occured")]
+    IOError(#[from] std::io::Error),
+
+    #[error("Failed to fetch file name")]
+    FailedToFetchFileName,
+
+    #[error("Unknown error occured")]
+    UnknownErrorOccured,
+}
+pub fn get_current_directory_name() -> Result<String, FSError> {
+    env::current_dir()?
+        .file_name()
+        .and_then(|f| f.to_str())
+        .map(|str| str.to_string())
+        .ok_or(FSError::UnknownErrorOccured)
 }
 
-pub fn get_latest_file_from_directory(path: &Path) -> Result<String, String> {
-    let files = get_files_from_directory(path);
-    Ok(files[0]
-        .as_ref()
-        .unwrap()
+pub fn parse_package_to_directory(name: &String) -> Result<&Path, FSError> {
+    let path = Path::new(name);
+    match path.is_dir() {
+        true => Ok(&path),
+        false => Err(FSError::NoPackageFound),
+    }
+}
+
+pub fn get_latest_file_from_directory(path: &Path) -> Result<String, FSError> {
+    let files = get_files_from_directory(path)?;
+    files[0]
+        .0
         .path()
         .to_str()
         .map(|s| s.to_string())
-        .unwrap())
+        .ok_or(FSError::UnknownErrorOccured)
 }
 
-pub fn get_files_from_directory(path: &Path) -> SortedDirEntries {
-    let mut files: Vec<io::Result<fs::DirEntry>> = path
-        .read_dir()
-        .unwrap()
+pub fn get_files_from_directory(path: &Path) -> Result<Files, FSError> {
+    let files: Result<Vec<File>, FSError> = path
+        .read_dir()?
         .into_iter()
-        .filter(|entry| entry.as_ref().unwrap().path().is_file())
+        .map(|entry| Ok(File(entry?)))
+        .filter(|file| file.as_ref().unwrap().0.path().is_file())
         .collect();
-    files.sort_by(move |a, b| compare_file_metadata(a, b).unwrap());
-    files
+    files.map(|mut files| {
+        files.sort_by(|a, b| {
+            b.compare_file_modified(a)
+                .expect("Failed to compare file modified time")
+        });
+        files
+    })
 }

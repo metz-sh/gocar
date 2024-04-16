@@ -1,14 +1,24 @@
 use clap::{Parser, Subcommand};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
+use thiserror::Error;
 
 use crate::fs_utils::{
     get_current_directory_name, get_files_from_directory, get_latest_file_from_directory,
-    parse_package_to_directory,
+    parse_package_to_directory, FSError,
 };
 use crate::{get_current_timestamp_string, run_process, REGISTRY_PATH};
 use std::path::Path;
 use std::process::Command as ProcessCommand;
+
+#[derive(Error, Debug)]
+pub enum CommandFailedError {
+    #[error("Command failed due FS error")]
+    FSError(#[from] FSError),
+
+    #[error("Process failed!")]
+    ProcessFailed,
+}
 
 #[derive(Subcommand)]
 pub enum CommandType {
@@ -38,7 +48,7 @@ pub struct Cli {
 // This is the interface for various commands that our tool handles
 pub trait Command {
     //The result captures either a success message or an error message
-    fn handle(&self) -> Result<String, String>;
+    fn handle(&self) -> Result<String, CommandFailedError>;
 }
 
 pub struct PullCommand {
@@ -80,12 +90,12 @@ impl CommandType {
 * ./registry/sandbox/sandbox_1712940454858.tgz
 */
 impl Command for PushCommand {
-    fn handle(&self) -> Result<String, String> {
+    fn handle(&self) -> Result<String, CommandFailedError> {
         if !self.skip_build {
             run_process(&mut ProcessCommand::new("yarn").arg("build"))?;
         }
 
-        let current_directory_name = get_current_directory_name();
+        let current_directory_name = get_current_directory_name()?;
         let file_name = format!(
             "{current_directory_name}_{time_millis}.tgz",
             time_millis = get_current_timestamp_string()
@@ -107,7 +117,7 @@ impl Command for PushCommand {
 * Once we have the folder, we just figure out the latest file created in that folder and install it.
 */
 impl Command for PullCommand {
-    fn handle(&self) -> Result<String, String> {
+    fn handle(&self) -> Result<String, CommandFailedError> {
         let full_path = format!("{REGISTRY_PATH}/{name}", name = &self.package_name);
         let path = parse_package_to_directory(&full_path)?;
         let latest_file = get_latest_file_from_directory(path)?;
@@ -116,7 +126,7 @@ impl Command for PullCommand {
 }
 
 impl PullCommand {
-    fn install(file: String) -> Result<String, String> {
+    fn install(file: String) -> Result<String, CommandFailedError> {
         run_process(&mut ProcessCommand::new("yarn").args(["add", format!("file:{file}").as_str()]))
             .map(|_| {
                 format!(
@@ -134,12 +144,12 @@ impl PullCommand {
 * Once the user selects the file they want, then we emulate the "pull" command
 */
 impl Command for PullVersionCommand {
-    fn handle(&self) -> Result<String, String> {
+    fn handle(&self) -> Result<String, CommandFailedError> {
         let full_path = format!("{REGISTRY_PATH}/{name}", name = &self.package_name);
         let path = parse_package_to_directory(&full_path)?;
-        let sorted_entries: Vec<String> = get_files_from_directory(path)
+        let sorted_entries: Vec<String> = get_files_from_directory(path)?
             .into_iter()
-            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .map(|entry| entry.get_file_name().unwrap())
             .collect();
 
         let selection = Select::with_theme(&ColorfulTheme::default())

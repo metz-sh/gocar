@@ -173,6 +173,7 @@ dependencies = [
  "clap",
  "colored",
  "dialoguer",
+ "thiserror",
 ]
 
 [[package]]

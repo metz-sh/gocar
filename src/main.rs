@@ -15,7 +15,7 @@ fn main() {
     let cli = Cli::parse();
     let message = match cli.command.parse().handle() {
         Ok(success_message) => success_message.green(),
-        Err(error_message) => error_message.red(),
+        Err(error_message) => error_message.to_string().red(),
     };
     println!("{message}");
 }

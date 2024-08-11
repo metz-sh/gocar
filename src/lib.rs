@@ -8,12 +8,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub const REGISTRY_PATH: &'static str = "/Users/rahulramteke/.metz-registry";
+pub const REGISTRY_PATH: &str = "/Users/rahulramteke/.metz-registry";
 
 pub fn run_process(command: &mut Command) -> Result<(), CommandFailedError> {
     let command = command
         .status()
-        .or_else(|_| Err(CommandFailedError::ProcessFailed))?;
+        .map_err(|_| CommandFailedError::ProcessFailed)?;
     match command.success() {
         false => Err(CommandFailedError::ProcessFailed),
         true => Ok(()),

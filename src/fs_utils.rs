@@ -48,7 +48,7 @@ pub fn get_current_directory_name() -> Result<String, FSError> {
 pub fn parse_package_to_directory(name: &String) -> Result<&Path, FSError> {
     let path = Path::new(name);
     match path.is_dir() {
-        true => Ok(&path),
+        true => Ok(path),
         false => Err(FSError::NoPackageFound),
     }
 }
@@ -66,7 +66,6 @@ pub fn get_latest_file_from_directory(path: &Path) -> Result<String, FSError> {
 pub fn get_files_from_directory(path: &Path) -> Result<Files, FSError> {
     let files: Result<Vec<File>, FSError> = path
         .read_dir()?
-        .into_iter()
         .map(|entry| Ok(File(entry?)))
         .filter(|file| file.as_ref().unwrap().0.path().is_file())
         .collect();

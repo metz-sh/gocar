@@ -31,6 +31,9 @@ pub enum CommandType {
     Pull {
         #[arg(short, long)]
         package_name: String,
+
+        #[arg(short, long)]
+        no_copy: bool,
     },
     ///pull a particular version of package by selecting from a list
     PullVersion {
@@ -53,6 +56,7 @@ pub trait Command {
 
 pub struct PullCommand {
     package_name: String,
+    no_copy: bool,
 }
 
 pub struct PullVersionCommand {
@@ -68,11 +72,12 @@ pub struct PushCommand {
 impl CommandType {
     pub fn parse(&self) -> Box<dyn Command> {
         match self {
-            CommandType::Pull { package_name } => Box::new(PullCommand {
+            CommandType::Pull { package_name, no_copy } => Box::new(PullCommand {
                 package_name: package_name.clone(),
+                no_copy: *no_copy,
             }),
             CommandType::Push { skip_build } => Box::new(PushCommand {
-                skip_build: skip_build.clone(),
+                skip_build: *skip_build,
             }),
             CommandType::PullVersion { package_name } => Box::new(PullVersionCommand {
                 package_name: package_name.clone(),
@@ -92,7 +97,7 @@ impl CommandType {
 impl Command for PushCommand {
     fn handle(&self) -> Result<String, CommandFailedError> {
         if !self.skip_build {
-            run_process(&mut ProcessCommand::new("yarn").arg("build"))?;
+            run_process(ProcessCommand::new("yarn").arg("build"))?;
         }
 
         let current_directory_name = get_current_directory_name()?;
@@ -102,11 +107,11 @@ impl Command for PushCommand {
         );
         let destination_folder = format!("{REGISTRY_PATH}/{current_directory_name}");
 
-        run_process(&mut ProcessCommand::new("mkdir").args(["-p", &destination_folder]))?;
+        run_process(ProcessCommand::new("mkdir").args(["-p", &destination_folder]))?;
 
         let destination = format!("{destination_folder}/{file_name}");
-        run_process(&mut ProcessCommand::new("yarn").args(["pack", "-f", destination.as_str()]))
-            .map(|_| format!("{}", "Pushed successfully!"))
+        run_process(ProcessCommand::new("yarn").args(["pack", "-f", destination.as_str()]))
+            .map(|_| "Pushed successfully!".to_string())
     }
 }
 
@@ -120,14 +125,28 @@ impl Command for PullCommand {
     fn handle(&self) -> Result<String, CommandFailedError> {
         let full_path = format!("{REGISTRY_PATH}/{name}", name = &self.package_name);
         let path = parse_package_to_directory(&full_path)?;
-        let latest_file = get_latest_file_from_directory(path)?;
-        PullCommand::install(latest_file)
+        let file_to_install = self.acquire_file_to_install(path)?;
+        PullCommand::install(file_to_install)
     }
 }
 
 impl PullCommand {
-    fn install(file: String) -> Result<String, CommandFailedError> {
-        run_process(&mut ProcessCommand::new("yarn").args(["add", format!("file:{file}").as_str()]))
+	fn copy_package_and_get_file(file_in_registry: String) -> Result<String, CommandFailedError> {
+		let file = Path::new(&file_in_registry).file_name().unwrap().to_str().unwrap();
+		run_process(ProcessCommand::new("cp").args([file_in_registry.clone(), file.to_string()])).map(|_| file.to_string())
+	}
+
+	fn acquire_file_to_install(&self, path: &Path)-> Result<String, CommandFailedError> {
+		let latest_file_in_registry = get_latest_file_from_directory(path)?;
+		if self.no_copy {
+			return Ok(latest_file_in_registry);
+		}
+
+		PullCommand::copy_package_and_get_file(latest_file_in_registry)
+	}
+
+	fn install(file: String) -> Result<String, CommandFailedError> {
+        run_process(ProcessCommand::new("yarn").args(["add", format!("file:{file}").as_str()]))
             .map(|_| {
                 format!(
                     "Installed {}",

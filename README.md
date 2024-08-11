@@ -8,6 +8,7 @@ The tool provides the following functionalities:
 
 - **Push**: Builds the project, packs it into a tarball, and stores it in a designated folder.
 - **Pull**: Retrieves the latest version of a package from the local registry and installs it.
+	- Run a "postinstall" script
 - **Pull Version**: Allows selecting and installing a specific version of a package from the local registry.
 
 ## Setup
@@ -18,9 +19,21 @@ To set up the Rust Local NPM Registry Emulator, follow these steps:
 
 2. **Build the Project**: Run `cargo build` to build the Rust project.
 
-3. **Set Registry Path**: Ensure that the `REGISTRY_PATH` constant in the code points to the directory where you want to store the local registry.
-
 ## Usage
+
+### The config file
+`gocar` requires a `.gocar.json` file to be present. And in this file it
+expects at least the `registry` field to be pointing towards a path you will
+be using as a store.
+Here's a sample `.gocar.json`:
+```json
+{
+	"registry": "/Users/<your-user-name>/.metz-registry",
+	"postinstall": {
+		"simulacrum": "cp -r node_modules/@metz/simulacrum/dist/assets public"
+	}
+}
+```
 
 ### Push Command
 
@@ -31,15 +44,30 @@ $ cargo run push
 ```
 
 Options:
-- `-s, --skip_build`: Skips the project build step before pushing.
+- `-s, --skip-build`: Skips the project build step before pushing.
 
 ### Pull Command
 
 The `pull` command retrieves the latest version of a package from the local registry and installs it using yarn.
 
 ```bash
-$ cargo run pull --package_name <package_name>
+$ cargo run pull --package-name <package_name>
 ```
+
+Options:
+- `--package-name <package_name>`: The package you want to pull
+- `-n, --no-copy`: By default, the tarball is copied and then installed. With this option, it will be installed directly from registry.
+Meaning, your lockfiles and `package.json` will be referencing the local registry.
+
+You can also configure through `.gocar.json` to run a command after you pull
+a package. In the file, add an entry under the key `"postinstall"` such that
+the key matches the package name and the value is the command. For example:
+```json
+"postinstall": {
+	"your-package": "ls node-modules/your-package"
+}
+```
+
 
 ### Pull Version Command
 

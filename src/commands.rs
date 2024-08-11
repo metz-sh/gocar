@@ -3,11 +3,12 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 use thiserror::Error;
 
+use crate::config::{get_post_install_script, get_registry_path};
 use crate::fs_utils::{
     get_current_directory_name, get_files_from_directory, get_latest_file_from_directory,
     parse_package_to_directory, FSError,
 };
-use crate::{get_current_timestamp_string, run_process, REGISTRY_PATH};
+use crate::{get_current_timestamp_string, run_process, run_script};
 use std::path::Path;
 use std::process::Command as ProcessCommand;
 
@@ -16,8 +17,11 @@ pub enum CommandFailedError {
     #[error("Command failed due FS error")]
     FSError(#[from] FSError),
 
-    #[error("Process failed!")]
-    ProcessFailed,
+    #[error("Process failed! {0}")]
+    ProcessFailed(String),
+
+    #[error("'registry' not found! Please add this value to .gocar.json")]
+    RegistryNotFound
 }
 
 #[derive(Subcommand)]
@@ -96,6 +100,7 @@ impl CommandType {
 */
 impl Command for PushCommand {
     fn handle(&self) -> Result<String, CommandFailedError> {
+    	let registry_path = parse_registry_path()?;
         if !self.skip_build {
             run_process(ProcessCommand::new("yarn").arg("build"))?;
         }
@@ -105,7 +110,7 @@ impl Command for PushCommand {
             "{current_directory_name}_{time_millis}.tgz",
             time_millis = get_current_timestamp_string()
         );
-        let destination_folder = format!("{REGISTRY_PATH}/{current_directory_name}");
+        let destination_folder = format!("{registry_path}/{current_directory_name}");
 
         run_process(ProcessCommand::new("mkdir").args(["-p", &destination_folder]))?;
 
@@ -120,13 +125,21 @@ impl Command for PushCommand {
 * For package-name sandbox, we'd look into ./registry/sandbox
 *
 * Once we have the folder, we just figure out the latest file created in that folder and install it.
+* We also look for corresponding postinstall script and execute it.
 */
 impl Command for PullCommand {
     fn handle(&self) -> Result<String, CommandFailedError> {
-        let full_path = format!("{REGISTRY_PATH}/{name}", name = &self.package_name);
+    	let registry_path = parse_registry_path()?;
+        let full_path = format!("{registry_path}/{name}", name = &self.package_name);
         let path = parse_package_to_directory(&full_path)?;
         let file_to_install = self.acquire_file_to_install(path)?;
-        PullCommand::install(file_to_install)
+        let result = PullCommand::install(file_to_install)?;
+
+        let script = get_post_install_script(&self.package_name);
+
+        script.map_or_else(|| Ok(result.clone()), |script| {
+	        run_script(script).map(|_| format!("{result}\nAnd ran postinstall"))
+        })
     }
 }
 
@@ -164,7 +177,8 @@ impl PullCommand {
 */
 impl Command for PullVersionCommand {
     fn handle(&self) -> Result<String, CommandFailedError> {
-        let full_path = format!("{REGISTRY_PATH}/{name}", name = &self.package_name);
+    	let registry_path = parse_registry_path()?;
+        let full_path = format!("{registry_path}/{name}", name = &self.package_name);
         let path = parse_package_to_directory(&full_path)?;
         let sorted_entries: Vec<String> = get_files_from_directory(path)?
             .into_iter()
@@ -181,10 +195,15 @@ impl Command for PullVersionCommand {
 
         let selected_file = sorted_entries[selection].clone();
         let selected_file_full_path = format!(
-            "{REGISTRY_PATH}/{name}/{selected_file}",
+            "{registry_path}/{name}/{selected_file}",
             name = &self.package_name
         );
 
         PullCommand::install(selected_file_full_path)
     }
+}
+
+
+fn parse_registry_path() -> Result<&'static String, CommandFailedError> {
+	get_registry_path().as_ref().ok_or(CommandFailedError::RegistryNotFound)
 }

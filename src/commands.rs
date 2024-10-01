@@ -135,7 +135,7 @@ impl Command for PullCommand {
         let file_to_install = self.acquire_file_to_install(path)?;
         let result = PullCommand::install(file_to_install)?;
 
-        let script = get_post_install_script(&self.package_name);
+        let script = get_post_install_script("postinstall", &self.package_name);
 
         script.map_or_else(|| Ok(result.clone()), |script| {
 	        run_script(script).map(|_| format!("{result}\nAnd ran postinstall"))

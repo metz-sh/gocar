@@ -1,6 +1,7 @@
 use config::Config;
 use std::{collections::HashMap, sync::OnceLock};
 
+
 pub const CONFIG_FILE_NAME: &str = ".gocar.json";
 
 pub fn config() -> &'static Option<Config> {
@@ -12,13 +13,12 @@ pub fn config() -> &'static Option<Config> {
     })
 }
 
-
-pub fn get_post_install() -> Option<HashMap<std::string::String, config::Value>> {
-	config().as_ref().and_then(|c| c.get_table("postinstall").ok())
+pub fn get_post_install(script_type: &str) -> Option<HashMap<String, config::Value>> {
+    config().as_ref().and_then(|c| c.get_table(&format!("scripts.{}", script_type)).ok())
 }
 
-pub fn get_post_install_script(package_name: &String) -> Option<String> {
-	let post_install = get_post_install()?;
+pub fn get_post_install_script(script_type: &str, package_name: &String) -> Option<String> {
+	let post_install = get_post_install(script_type)?;
 	let value = &post_install.get(package_name.as_str())?.kind;
 	Some(value.to_string())
 }
